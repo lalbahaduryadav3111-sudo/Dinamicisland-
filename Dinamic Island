@@ -1,0 +1,285 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_overlay_window/flutter_overlay_window.dart';
+
+@pragma("vm:entry-point")
+void overlayMain() {
+  runApp(const MaterialApp(
+    debugShowCheckedModeBanner: false,
+    home: DynamicOverlayIsland(),
+  ));
+}
+
+class DynamicOverlayIsland extends StatefulWidget {
+  const DynamicOverlayIsland({super.key});
+
+  @override
+  State<DynamicOverlayIsland> createState() => _DynamicOverlayIslandState();
+}
+
+class _DynamicOverlayIslandState extends State<DynamicOverlayIsland> {
+  bool isExpanded = false;
+  double topMargin = 10.0;
+  double leftMargin = 0.0;
+  double baseWidth = 90.0;
+  double baseHeight = 30.0;
+
+  String eventType = "idle"; // idle, charging, silent, call, music, notification
+  String eventTitle = "";
+  String eventMessage = "";
+
+  @override
+  void initState() {
+    super.initState();
+    FlutterOverlayWindow.overlayListener.listen((data) {
+      if (data != null && data is Map) {
+        setState(() {
+          if (data["type"] == "update_config") {
+            topMargin = data["top"] ?? topMargin;
+            leftMargin = data["left"] ?? leftMargin;
+            baseWidth = data["width"] ?? baseWidth;
+            baseHeight = data["height"] ?? baseHeight;
+          } else {
+            eventType = data["type"] ?? "idle";
+            eventTitle = data["title"] ?? "New Alert";
+            eventMessage = data["text"] ?? "";
+            isExpanded = true;
+          }
+        });
+
+        // Auto collapse for normal events (Calls/Music user manual band karenge ya timeout hoga)
+        if (eventType != "call" && eventType != "music" && data["type"] != "update_config") {
+          Future.delayed(const Duration(milliseconds: 3500), () {
+            if (mounted) {
+              setState(() {
+                isExpanded = false;
+                eventType = "idle";
+              });
+            }
+          });
+        }
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    double currentWidth = isExpanded ? 290 : baseWidth;
+    double currentHeight = isExpanded ? 60 : baseHeight;
+
+    return Material(
+      color: Colors.transparent,
+      child: Stack(
+        children: [
+          Positioned(
+            top: topMargin,
+            left: (MediaQuery.of(context).size.width / 2) - (currentWidth / 2) + leftMargin,
+            child: GestureDetector(
+              onTap: () {
+                // Tap karne par island band ho jaye ya action ho
+                setState(() {
+                  isExpanded = !isExpanded;
+                });
+              },
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeOutBack,
+                width: currentWidth,
+                height: currentHeight,
+                decoration: BoxDecoration(
+                  color: Colors.black,
+                  borderRadius: BorderRadius.circular(30),
+                  boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 8, spreadRadius: 1)],
+                ),
+                padding: const EdgeInsets.symmetric(horizontal: 14),
+                child: Center(
+                  child: isExpanded ? _buildIslandContent() : const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIslandContent() {
+    switch (eventType) {
+      case "charging":
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: const [
+            Text("Charging Connected", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+            Row(
+              children: [
+                Text("85%", style: TextStyle(color: Colors.greenAccent, fontSize: 12, fontWeight: FontWeight.bold)),
+                SizedBox(width: 4),
+                Icon(Icons.bolt, color: Colors.greenAccent, size: 16),
+              ],
+            ),
+          ],
+        );
+      case "silent":
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: const [
+            Text("Silent Mode Active", style: TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold)),
+            Icon(Icons.notifications_off, color: Colors.redAccent, size: 16),
+          ],
+        );
+      case "call":
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Icon(Icons.phone_incoming, color: Colors.greenAccent, size: 18),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: Text(
+                  eventTitle,
+                  style: const TextStyle(color: Colors.white, fontSize: 12, fontWeight: FontWeight.bold),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            const Icon(Icons.call_end, color: Colors.red, size: 18),
+          ],
+        );
+      case "music":
+        return Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            const Icon(Icons.music_note, color: Colors.purpleAccent, size: 18),
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                child: Text(
+                  eventMessage.isNotEmpty ? eventMessage : "Playing Music...",
+                  style: const TextStyle(color: Colors.white70, fontSize: 11),
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+            const Icon(Icons.play_arrow, color: Colors.white, size: 18),
+          ],
+        );
+      default:
+        return const Text("Dynamic Island", style: TextStyle(color: Colors.white, fontSize: 11));
+    }
+  }
+}
+
+void main() => runApp(const MyApp());
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return const MaterialApp(
+      debugShowCheckedModeBanner: false,
+      home: HomeScreen(),
+    );
+  }
+}
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  bool isPermissionGranted = false;
+  double topMargin = 10.0;
+  double leftMargin = 0.0;
+  double islandWidth = 90.0;
+  double islandHeight = 30.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkPermission();
+  }
+
+  Future<void> _checkPermission() async {
+    bool status = await FlutterOverlayWindow.isPermissionGranted();
+    setState(() => isPermissionGranted = status);
+  }
+
+  Future<void> _startOrUpdateOverlay() async {
+    if (!isPermissionGranted) {
+      bool? status = await FlutterOverlayWindow.requestPermission();
+      if (status == true) setState(() => isPermissionGranted = true);
+    }
+
+    if (isPermissionGranted) {
+      await FlutterOverlayWindow.showOverlay(
+        height: islandHeight.toInt() + 60,
+        width: islandWidth.toInt() + 150,
+        alignment: OverlayAlignment.topCenter,
+        flag: OverlayFlag.defaultFlag,
+        visibility: NotificationVisibility.visibilitySecret,
+        positionGravity: PositionGravity.none,
+      );
+
+      await FlutterOverlayWindow.shareData({
+        "type": "update_config",
+        "top": topMargin,
+        "left": leftMargin,
+        "width": islandWidth,
+        "height": islandHeight,
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Global Dynamic Island Active Enabled!")),
+        );
+      }
+    }
+  }
+
+  // Test triggers for UI testing
+  void sendTestEvent(String type, String title) {
+    FlutterOverlayWindow.shareData({
+      "type": type,
+      "title": title,
+      "text": "Sample details for $type",
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      backgroundColor: Colors.grey[950],
+      appBar: AppBar(title: const Text("Dynamic Island Pro"), backgroundColor: Colors.black),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(20.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            ElevatedButton.icon(
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent),
+              onPressed: _startOrUpdateOverlay,
+              icon: const Icon(Icons.play_arrow, color: Colors.white),
+              label: const Text("Start Global Overlay", style: TextStyle(color: Colors.white)),
+            ),
+            const SizedBox(height: 20),
+            const Text("Test iPhone Features:", style: TextStyle(color: Colors.white70, fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 10,
+              runSpacing: 10,
+              children: [
+                ElevatedButton(onPressed: () => sendTestEvent("call", "Incoming: John Doe"), child: const Text("Simulate Call")),
+                ElevatedButton(onPressed: () => sendTestEvent("music", "Song: Blinding Lights"), child: const Text("Simulate Music")),
+                ElevatedButton(onPressed: () => sendTestEvent("charging", "Charging"), child: const Text("Simulate Charging")),
+                ElevatedButton(onPressed: () => sendTestEvent("silent", "Silent"), child: const Text("Simulate Silent")),
+              ],
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
